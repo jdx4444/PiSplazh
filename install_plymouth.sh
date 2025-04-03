@@ -4,16 +4,19 @@
 #
 # This script automates the installation of a custom animated Plymouth boot splash.
 # It copies PNG images from a specified directory (named frame1.png, frame2.png, etc.),
-# rotates and optionally scales them, creates the necessary theme files, and activates the theme.
+# rotates and optionally scales them, creates the necessary theme files, activates the theme,
+# and optionally delays Plymouth's quit service.
 #
 # Usage:
-#   sudo ./install_plymouth.sh -p /path/to/images [-c image_count] [-r rotation_angle] [-s scale_percentage]
+#   sudo ./install_plymouth.sh -p /path/to/images [-c image_count] [-r rotation_angle] [-s scale_percentage] [-d delay_seconds]
 #
 # Options:
 #   -p  Path to the directory containing your PNG images.
 #   -c  (Optional) Number of image frames (if omitted, the script counts matching files).
 #   -r  (Optional) Rotation angle in degrees (default is 90 for clockwise rotation).
-#   -s  (Optional) Scaling percentage (e.g. 150 for 150% scaling; if omitted, no scaling is done).
+#   -s  (Optional) Scaling percentage (e.g., 150 for 150% scaling; if omitted, no scaling is done).
+#   -d  (Optional) Delay in seconds to keep the Plymouth splash active after boot finishes.
+#
 
 # Check if running as root.
 if [ "$EUID" -ne 0 ]; then
@@ -23,12 +26,12 @@ fi
 
 # Function for usage message.
 usage() {
-    echo "Usage: $0 -p /path/to/images [-c image_count] [-r rotation_angle] [-s scale_percentage]"
+    echo "Usage: $0 -p /path/to/images [-c image_count] [-r rotation_angle] [-s scale_percentage] [-d delay_seconds]"
     exit 1
 }
 
 # Parse command-line arguments.
-while getopts ":p:c:r:s:" opt; do
+while getopts ":p:c:r:s:d:" opt; do
   case ${opt} in
     p )
       IMAGE_PATH="$OPTARG"
@@ -41,6 +44,9 @@ while getopts ":p:c:r:s:" opt; do
       ;;
     s )
       SCALE="$OPTARG"
+      ;;
+    d )
+      DELAY="$OPTARG"
       ;;
     \? )
       usage
@@ -73,6 +79,9 @@ echo "Rotation angle: $ROTATION degrees"
 if [ -n "$SCALE" ]; then
     echo "Scaling percentage: ${SCALE}%"
 fi
+if [ -n "$DELAY" ]; then
+    echo "Plymouth delay: ${DELAY} seconds"
+fi
 
 # Check if we need ImageMagick for rotation or scaling.
 if [ -n "$ROTATION" ] || [ -n "$SCALE" ]; then
@@ -93,7 +102,7 @@ THEME_DIR="/usr/share/plymouth/themes/myanim"
 # Create the theme directory.
 mkdir -p "$THEME_DIR"
 
-# Back up any existing theme images (optional)
+# (Optional) Back up any existing theme files.
 if [ -d "$THEME_DIR" ]; then
     cp -r "$THEME_DIR" "${THEME_DIR}_backup_$(date +%s)"
 fi
@@ -161,4 +170,18 @@ else
     update-initramfs -u
 fi
 
-echo "Installation complete. Please reboot your system to see the new animated boot splash!"
+# Optional: If the user provided a delay value, modify Plymouth's quit service.
+if [ -n "$DELAY" ] && [ "$DELAY" -gt 0 ]; then
+    echo "Setting Plymouth quit delay to ${DELAY} seconds..."
+    mkdir -p /etc/systemd/system/plymouth-quit-wait.service.d
+    cat <<EOF > /etc/systemd/system/plymouth-quit-wait.service.d/delay.conf
+[Service]
+ExecStartPre=/bin/sleep ${DELAY}
+EOF
+    systemctl daemon-reload
+    echo "Plymouth quit delay set."
+else
+    echo "No Plymouth quit delay requested; leaving default behavior."
+fi
+
+echo "Installation complete. Please reboot your system to see the new animated boot splash."
