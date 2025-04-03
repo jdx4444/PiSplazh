@@ -3,16 +3,17 @@
 # install_plymouth.sh
 #
 # This script automates the installation of a custom animated Plymouth boot splash.
-# It copies PNG images from a specified directory, rotates them, creates the necessary
-# theme files, and activates the theme.
+# It copies PNG images from a specified directory (named frame1.png, frame2.png, etc.),
+# rotates and optionally scales them, creates the necessary theme files, and activates the theme.
 #
 # Usage:
-#   sudo ./install_plymouth.sh -p /path/to/images [-c image_count] [-r rotation_angle]
+#   sudo ./install_plymouth.sh -p /path/to/images [-c image_count] [-r rotation_angle] [-s scale_percentage]
 #
 # Options:
-#   -p  Path to the directory containing your PNG images (named frame1.png, frame2.png, etc.)
-#   -c  (Optional) Number of image frames (if omitted, the script counts matching files)
-#   -r  (Optional) Rotation angle in degrees (default is 90 for clockwise rotation)
+#   -p  Path to the directory containing your PNG images.
+#   -c  (Optional) Number of image frames (if omitted, the script counts matching files).
+#   -r  (Optional) Rotation angle in degrees (default is 90 for clockwise rotation).
+#   -s  (Optional) Scaling percentage (e.g. 150 for 150% scaling; if omitted, no scaling is done).
 
 # Check if running as root.
 if [ "$EUID" -ne 0 ]; then
@@ -22,12 +23,12 @@ fi
 
 # Function for usage message.
 usage() {
-    echo "Usage: $0 -p /path/to/images [-c image_count] [-r rotation_angle]"
+    echo "Usage: $0 -p /path/to/images [-c image_count] [-r rotation_angle] [-s scale_percentage]"
     exit 1
 }
 
 # Parse command-line arguments.
-while getopts ":p:c:r:" opt; do
+while getopts ":p:c:r:s:" opt; do
   case ${opt} in
     p )
       IMAGE_PATH="$OPTARG"
@@ -37,6 +38,9 @@ while getopts ":p:c:r:" opt; do
       ;;
     r )
       ROTATION="$OPTARG"
+      ;;
+    s )
+      SCALE="$OPTARG"
       ;;
     \? )
       usage
@@ -66,12 +70,33 @@ fi
 echo "Using images from: $IMAGE_PATH"
 echo "Image count: $IMAGE_COUNT"
 echo "Rotation angle: $ROTATION degrees"
+if [ -n "$SCALE" ]; then
+    echo "Scaling percentage: ${SCALE}%"
+fi
+
+# Check if we need ImageMagick for rotation or scaling.
+if [ -n "$ROTATION" ] || [ -n "$SCALE" ]; then
+    if ! command -v mogrify &> /dev/null; then
+        read -p "ImageMagick (mogrify) is required for image processing but is not installed. Install it now? (y/n): " answer
+        if [[ "$answer" =~ ^[Yy]$ ]]; then
+            apt update && apt install -y imagemagick
+        else
+            echo "Cannot process images without ImageMagick. Exiting."
+            exit 1
+        fi
+    fi
+fi
 
 # Define the Plymouth theme directory.
 THEME_DIR="/usr/share/plymouth/themes/myanim"
 
 # Create the theme directory.
 mkdir -p "$THEME_DIR"
+
+# Back up any existing theme images (optional)
+if [ -d "$THEME_DIR" ]; then
+    cp -r "$THEME_DIR" "${THEME_DIR}_backup_$(date +%s)"
+fi
 
 # Remove old frame images from the theme directory (if any).
 rm -f "$THEME_DIR"/frame*.png
@@ -82,6 +107,12 @@ cp "$IMAGE_PATH"/frame*.png "$THEME_DIR"/
 # Rotate the images using ImageMagick.
 echo "Rotating images by $ROTATION degrees..."
 mogrify -rotate "$ROTATION" "$THEME_DIR"/frame*.png
+
+# If scaling was provided, scale the images.
+if [ -n "$SCALE" ]; then
+    echo "Scaling images by ${SCALE}%..."
+    mogrify -resize "${SCALE}%" "$THEME_DIR"/frame*.png
+fi
 
 # Create the Plymouth theme descriptor file.
 DESCRIPTOR_FILE="$THEME_DIR/myanim.plymouth"
@@ -130,4 +161,4 @@ else
     update-initramfs -u
 fi
 
-echo "Installation complete. Please reboot your system to see the new animated boot splash."
+echo "Installation complete. Please reboot your system to see the new animated boot splash!"
