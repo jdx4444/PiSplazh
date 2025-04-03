@@ -18,19 +18,19 @@
 #   -d  (Optional) Delay in seconds to keep the Plymouth splash active after boot finishes.
 #
 
-# Check if running as root.
+# Ensure we're running as root.
 if [ "$EUID" -ne 0 ]; then
   echo "Please run this script as root (e.g., using sudo)."
   exit 1
 fi
 
-# Function for usage message.
+# Function to display usage information.
 usage() {
     echo "Usage: $0 -p /path/to/images [-c image_count] [-r rotation_angle] [-s scale_percentage] [-d delay_seconds]"
     exit 1
 }
 
-# Parse command-line arguments.
+# Parse command-line options.
 while getopts ":p:c:r:s:d:" opt; do
   case ${opt} in
     p )
@@ -54,17 +54,16 @@ while getopts ":p:c:r:s:d:" opt; do
   esac
 done
 
-# Check if image path is provided.
+# Verify that the image path was provided.
 if [ -z "$IMAGE_PATH" ]; then
     usage
 fi
 
-# Set default rotation if not provided.
+# Set defaults if necessary.
 if [ -z "$ROTATION" ]; then
     ROTATION=90
 fi
 
-# If image count is not provided, count the images in the supplied directory.
 if [ -z "$IMAGE_COUNT" ]; then
     IMAGE_COUNT=$(ls "$IMAGE_PATH"/frame*.png 2>/dev/null | wc -l)
     if [ "$IMAGE_COUNT" -eq 0 ]; then
@@ -83,7 +82,7 @@ if [ -n "$DELAY" ]; then
     echo "Plymouth delay: ${DELAY} seconds"
 fi
 
-# Check if we need ImageMagick for rotation or scaling.
+# Check for ImageMagick's mogrify if rotation or scaling is requested.
 if [ -n "$ROTATION" ] || [ -n "$SCALE" ]; then
     if ! command -v mogrify &> /dev/null; then
         read -p "ImageMagick (mogrify) is required for image processing but is not installed. Install it now? (y/n): " answer
@@ -99,25 +98,25 @@ fi
 # Define the Plymouth theme directory.
 THEME_DIR="/usr/share/plymouth/themes/myanim"
 
-# Create the theme directory.
+# Create (or ensure) the theme directory.
 mkdir -p "$THEME_DIR"
 
-# (Optional) Back up any existing theme files.
+# Optional: Back up the existing theme directory.
 if [ -d "$THEME_DIR" ]; then
     cp -r "$THEME_DIR" "${THEME_DIR}_backup_$(date +%s)"
 fi
 
-# Remove old frame images from the theme directory (if any).
+# Remove any existing frame images.
 rm -f "$THEME_DIR"/frame*.png
 
-# Copy the images from the user-specified path.
+# Copy the images from the specified directory.
 cp "$IMAGE_PATH"/frame*.png "$THEME_DIR"/
 
-# Rotate the images using ImageMagick.
+# Rotate the images.
 echo "Rotating images by $ROTATION degrees..."
 mogrify -rotate "$ROTATION" "$THEME_DIR"/frame*.png
 
-# If scaling was provided, scale the images.
+# If scaling is specified, scale the images.
 if [ -n "$SCALE" ]; then
     echo "Scaling images by ${SCALE}%..."
     mogrify -resize "${SCALE}%" "$THEME_DIR"/frame*.png
@@ -159,7 +158,7 @@ EOF
 
 echo "Theme files created in $THEME_DIR."
 
-# Activate the custom theme and rebuild initramfs.
+# Activate the custom theme and rebuild the initramfs.
 echo "Activating the custom Plymouth theme..."
 if plymouth-set-default-theme -R myanim; then
     echo "Theme activated successfully."
@@ -170,7 +169,7 @@ else
     update-initramfs -u
 fi
 
-# Optional: If the user provided a delay value, modify Plymouth's quit service.
+# If a delay was specified, set the Plymouth quit delay.
 if [ -n "$DELAY" ] && [ "$DELAY" -gt 0 ]; then
     echo "Setting Plymouth quit delay to ${DELAY} seconds..."
     mkdir -p /etc/systemd/system/plymouth-quit-wait.service.d
@@ -181,7 +180,7 @@ EOF
     systemctl daemon-reload
     echo "Plymouth quit delay set."
 else
-    echo "No Plymouth quit delay requested; leaving default behavior."
+    echo "No Plymouth quit delay specified; leaving default behavior."
 fi
 
 echo "Installation complete. Please reboot your system to see the new animated boot splash."
